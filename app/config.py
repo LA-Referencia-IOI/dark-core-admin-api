@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     
     # API Server
     admin_api_host: str = "0.0.0.0"
-    admin_api_port: int = 8001
+    admin_api_port: int = 8000
     
     # mTLS Configuration
     mtls_enabled: bool = False
