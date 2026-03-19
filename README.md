@@ -18,8 +18,8 @@ The Admin API provides endpoints for:
 ┌─────────────────────────────────────────────────────────────┐
 │                     Admin Node                               │
 │  ┌──────────────────────┐    ┌────────────────────────────┐ │
-│  │  dark-core-admin-api │───▶│  dark-core-orchestrator    │ │
-│  │    (Port 8001)       │    │  (Authority Management)     │ │
+│  │  dark-core-admin-api │───▶│  dark-core-lib             │ │
+│  │    (Port 8000)       │    │  (Authority Management)     │ │
 │  └──────────────────────┘    └────────────────────────────┘ │
 └─────────────────────────────────│────────────────────────────┘
                                   │
@@ -52,8 +52,8 @@ source venv/bin/activate  # Linux/Mac
 # Install dependencies
 pip install -r requirements.txt
 
-# Install orchestrator library
-pip install -e ../dark-core-orchestrator
+# Install core library
+pip install -e ../dark-core-lib
 
 # Configure environment
 cp .env.example .env
@@ -67,7 +67,7 @@ Edit `.env` with your settings:
 ```env
 # API Server
 ADMIN_API_HOST=0.0.0.0
-ADMIN_API_PORT=8001
+ADMIN_API_PORT=8000
 
 # mTLS (enable in production)
 MTLS_ENABLED=true
@@ -91,21 +91,32 @@ DEFAULT_FUND_AMOUNT_ETH=0.01
 ### Development
 
 ```bash
-uvicorn app.main:app --reload --port 8001
+uvicorn app.main:app --reload --port 8000
 ```
 
 ### Production
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 4
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ### Docker
 
 ```bash
-docker build -t dark-core-admin-api .
-docker run -p 8001:8001 --env-file .env dark-core-admin-api
+cd /Users/lmatas/source/dark-developer/components
+docker build -f services/dark-core-admin-api/Dockerfile -t dark-core-admin-api .
+docker run -p 8000:8000 --env-file services/dark-core-admin-api/.env.integration dark-core-admin-api
 ```
+
+### Docker Compose
+
+```bash
+cd /Users/lmatas/source/dark-developer/components/services/dark-core-admin-api
+docker compose up -d --build
+```
+
+The compose stack joins `dark-net` and rewrites `DARK_RPC_URL` to `http://rpc01:8545`
+so the container can reach the blockchain network started by `dark-env`.
 
 ## API Endpoints
 
@@ -142,8 +153,8 @@ GET /health
 
 Once running, access:
 
-- Swagger UI: http://localhost:8001/docs
-- ReDoc: http://localhost:8001/redoc
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
 ## Security
 

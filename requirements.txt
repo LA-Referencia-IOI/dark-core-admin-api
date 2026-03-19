@@ -12,11 +12,11 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 
 # Blockchain (Web3)
-web3>=6.0.0
-eth-account>=0.10.0
+web3==6.20.0
+eth-account==0.11.2
 
 # Cryptography for mTLS and key encryption
 cryptography>=41.0.0
 
-# Local orchestrator library (install in editable mode)
-# pip install -e ../dark-core-orchestrator
+# Local core library (install in editable mode)
+# pip install -e ../dark-core-lib

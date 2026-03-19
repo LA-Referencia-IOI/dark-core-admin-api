@@ -11,7 +11,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.dependencies import init_orchestrator, shutdown_orchestrator, get_orchestrator
+from app.dependencies import (
+    get_corelib_client,
+    init_corelib_client,
+    shutdown_corelib_client,
+)
 from app.api.router import api_router
 from app.exceptions.handlers import register_exception_handlers
 
@@ -41,19 +45,19 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("mTLS is disabled - for development only!")
     
-    # Initialize orchestrator connection to blockchain
+    # Initialize blockchain client
     try:
-        orchestrator = init_orchestrator()
-        logger.info(f"Connected to blockchain at block {orchestrator.get_block_number()}")
+        corelib_client = init_corelib_client()
+        logger.info(f"Connected to blockchain at block {corelib_client.get_block_number()}")
     except Exception as e:
-        logger.error(f"Failed to initialize orchestrator: {e}")
+        logger.error(f"Failed to initialize dark-core-lib client: {e}")
         raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down dARK Core Admin API...")
-    shutdown_orchestrator()
+    shutdown_corelib_client()
 
 
 def create_app() -> FastAPI:
@@ -97,9 +101,9 @@ def create_app() -> FastAPI:
     async def health_check():
         """Health check endpoint."""
         try:
-            orchestrator = get_orchestrator()
-            block = orchestrator.get_block_number()
-            admin_balance = orchestrator.get_admin_balance()
+            corelib_client = get_corelib_client()
+            block = corelib_client.get_block_number()
+            admin_balance = corelib_client.get_admin_balance()
             return {
                 "status": "healthy",
                 "blockchain_connected": True,
@@ -109,7 +113,7 @@ def create_app() -> FastAPI:
         except RuntimeError:
             return {
                 "status": "unhealthy",
-                "error": "Orchestrator not initialized"
+                "error": "dark-core-lib client not initialized"
             }
         except Exception as e:
             return {

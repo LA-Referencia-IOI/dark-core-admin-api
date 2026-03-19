@@ -2,9 +2,7 @@
 Tests for Admin API endpoints.
 """
 
-import pytest
-from unittest.mock import MagicMock
-from dark_orchestrator.exceptions import AuthorityError, DARKError
+from dark_core_lib.exceptions import AuthorityAlreadyExistsError, AuthorityNotFoundError
 
 
 class TestHealthEndpoint:
@@ -25,7 +23,7 @@ class TestHealthEndpoint:
 class TestRegisterAuthority:
     """Tests for POST /api/v1/admin/authority."""
     
-    def test_register_authority_success(self, client, mock_orchestrator, mock_authority_info):
+    def test_register_authority_success(self, client, mock_corelib_client, mock_authority_info):
         """Test successful authority registration."""
         payload = {
             "uuid": "test-authority-123",
@@ -42,11 +40,11 @@ class TestRegisterAuthority:
         assert data["naans"] == mock_authority_info.naans
         assert data["active"] is True
         
-        mock_orchestrator.setup_authority.assert_called_once()
+        mock_corelib_client.setup_authority.assert_called_once()
     
-    def test_register_authority_already_exists(self, client, mock_orchestrator):
+    def test_register_authority_already_exists(self, client, mock_corelib_client):
         """Test registering duplicate authority returns 409."""
-        mock_orchestrator.setup_authority.side_effect = DARKError(
+        mock_corelib_client.setup_authority.side_effect = AuthorityAlreadyExistsError(
             "Authority with UUID 'test' already exists on blockchain"
         )
         
@@ -59,7 +57,7 @@ class TestRegisterAuthority:
         
         assert response.status_code == 409
         data = response.json()
-        assert data["error"] == "ALREADY_EXISTS"
+        assert data["error"] == "AUTHORITY_ALREADY_EXISTS"
     
     def test_register_authority_missing_fields(self, client):
         """Test missing required fields returns 422."""
@@ -86,9 +84,9 @@ class TestGetAuthority:
         assert data["wallet_address"] == mock_authority_info.wallet_address
         assert "balance_eth" in data
     
-    def test_get_authority_not_found(self, client, mock_orchestrator):
+    def test_get_authority_not_found(self, client, mock_corelib_client):
         """Test getting non-existent authority returns 404."""
-        mock_orchestrator.get_authority_by_uuid.side_effect = AuthorityError(
+        mock_corelib_client.get_authority_by_uuid.side_effect = AuthorityNotFoundError(
             "Authority not found: unknown-uuid"
         )
         
@@ -115,11 +113,9 @@ class TestAuthorizeNAAN:
         data = response.json()
         assert data["status"] == "success"
     
-    def test_authorize_naan_already_authorized(self, client, mock_orchestrator, mock_authority_info):
+    def test_authorize_naan_already_authorized(self, client, mock_corelib_client, mock_authority_info):
         """Test authorizing already authorized NAAN."""
-        mock_orchestrator.authority_manager.authorize_naan.return_value = {
-            "already_authorized": True
-        }
+        mock_corelib_client.get_authority_by_uuid.return_value = mock_authority_info
         
         payload = {"naan": "12345"}
         
@@ -134,15 +130,77 @@ class TestAuthorizeNAAN:
         assert "already authorized" in data["message"]
 
 
+class TestRevokeNAAN:
+    """Tests for POST /api/v1/admin/authority/{uuid}/revoke-naan."""
+
+    def test_revoke_naan_success(self, client, mock_authority_info):
+        """Test revoking an authorized NAAN."""
+        payload = {"naan": "12345"}
+
+        response = client.post(
+            f"/api/v1/admin/authority/{mock_authority_info.uuid}/revoke-naan",
+            json=payload,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "revoked" in data["message"]
+        assert data["transaction_hash"] == "87654321"
+
+    def test_revoke_naan_not_authorized(self, client, mock_corelib_client, mock_authority_info):
+        """Test revoking a NAAN that is not currently authorized."""
+        mock_corelib_client.get_authority_by_uuid.return_value = mock_authority_info
+        payload = {"naan": "99999"}
+
+        response = client.post(
+            f"/api/v1/admin/authority/{mock_authority_info.uuid}/revoke-naan",
+            json=payload,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "was not authorized" in data["message"]
+        assert data["transaction_hash"] is None
+
+
+class TestDeactivateAuthority:
+    """Tests for POST /api/v1/admin/authority/{uuid}/deactivate."""
+
+    def test_deactivate_authority_success(self, client, mock_authority_info):
+        """Test deactivating an active authority."""
+        response = client.post(
+            f"/api/v1/admin/authority/{mock_authority_info.uuid}/deactivate"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "deactivated" in data["message"]
+        assert data["transaction_hash"] == "deadbeef"
+
+    def test_deactivate_authority_already_inactive(self, client, mock_corelib_client, mock_authority_info):
+        """Test deactivating an already inactive authority."""
+        mock_authority_info.active = False
+        mock_corelib_client.get_authority_by_uuid.return_value = mock_authority_info
+
+        response = client.post(
+            f"/api/v1/admin/authority/{mock_authority_info.uuid}/deactivate"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "already inactive" in data["message"]
+        assert data["transaction_hash"] is None
+
+
 class TestFundWallet:
     """Tests for POST /api/v1/admin/authority/{uuid}/fund."""
     
-    def test_fund_wallet_success(self, client, mock_orchestrator, mock_authority_info):
+    def test_fund_wallet_success(self, client, mock_corelib_client, mock_authority_info):
         """Test funding authority wallet."""
-        mock_orchestrator._fund_wallet.return_value = {
-            "transactionHash": b"\xab\xcd\xef\x12",
-        }
-        
         payload = {"amount_eth": 0.05}
         
         response = client.post(
@@ -154,6 +212,7 @@ class TestFundWallet:
         data = response.json()
         assert data["status"] == "success"
         assert "0.05" in data["message"]
+        assert data["transaction_hash"] == "abcdef12"
     
     def test_fund_wallet_invalid_amount(self, client, mock_authority_info):
         """Test funding with invalid amount returns 422."""

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.integration"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     tls_key_file: Optional[str] = None
     tls_ca_file: Optional[str] = None
     
-    # Blockchain Connection (same vars as dark-orchestrator)
+    # Blockchain connection (same vars as dark-core-lib)
     dark_rpc_url: str = "http://localhost:8545"
     dark_chain_id: int = 1337
     dark_authority_address: str = ""

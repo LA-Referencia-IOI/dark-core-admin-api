@@ -9,28 +9,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for layer caching
-COPY requirements.txt .
+# Build context is expected to be components so dark-core-lib is available.
+# Example:
+# docker build -f services/dark-core-admin-api/Dockerfile -t dark-core-admin-api .
+COPY services/dark-core-admin-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy orchestrator library (assumes it's available in build context)
-# In production, this would be installed from a package registry
-COPY dark-core-orchestrator /opt/dark-core-orchestrator
-RUN pip install --no-cache-dir /opt/dark-core-orchestrator
+# Copy dark-core-lib from the sibling directory in the build context.
+COPY core/dark-core-lib /opt/dark-core-lib
+RUN pip install --no-cache-dir /opt/dark-core-lib
 
 # Copy application
-COPY app/ ./app/
+COPY services/dark-core-admin-api/app/ ./app/
 
 # Create non-root user
 RUN useradd -m -u 1000 dark && chown -R dark:dark /app
 USER dark
 
 # Expose port
-EXPOSE 8001
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
 # Run server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

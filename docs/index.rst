@@ -36,6 +36,6 @@ Configure environment::
 
 Run the server::
 
-    uvicorn app.main:app --port 8001
+    uvicorn app.main:app --port 8000
 
-Access documentation at http://localhost:8001/docs
+Access documentation at http://localhost:8000/docs

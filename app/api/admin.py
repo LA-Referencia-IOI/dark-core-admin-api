@@ -5,25 +5,25 @@ Provides administrative operations for managing authorities in the dARK network.
 """
 
 import logging
-from fastapi import APIRouter, Depends, Path, HTTPException
 
-from dark_orchestrator import DARKOrchestrator
-from dark_orchestrator.exceptions import AuthorityError, DARKError
+from fastapi import APIRouter, Depends, Path
+
+from dark_core_lib import DARKCoreClient
 
 from app.config import get_settings
-from app.dependencies import get_orchestrator
+from app.dependencies import get_corelib_client
 from app.middleware.auth import require_mtls
 from app.models.requests import (
-    RegisterAuthorityRequest,
     AuthorizeNAANRequest,
-    RevokeNAANRequest,
     FundWalletRequest,
+    RegisterAuthorityRequest,
+    RevokeNAANRequest,
 )
 from app.models.responses import (
+    AdminStatusResponse,
     AuthorityResponse,
     BalanceResponse,
     OperationResponse,
-    AdminStatusResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,9 +31,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# =============================================================================
-# Authority Management
-# =============================================================================
+def _tx_hash_or_none(tx_hash: str) -> str | None:
+    """Normalize empty transaction hashes to ``None`` for API responses."""
+    return tx_hash or None
+
 
 @router.post(
     "/authority",
@@ -47,11 +48,11 @@ router = APIRouter()
 async def register_authority(
     request: RegisterAuthorityRequest,
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> AuthorityResponse:
     """
     Register a new authority.
-    
+
     This operation:
     1. Creates a new wallet for the authority
     2. Encrypts and stores the private key on blockchain
@@ -60,27 +61,23 @@ async def register_authority(
     5. Authorizes all specified NAANs
     """
     logger.info(f"Registering new authority: {request.uuid} with NAANs: {request.naans}")
-    
+
     settings = get_settings()
-    
-    # Calculate funding amount
+
     if request.fund_amount_eth is not None:
-        fund_amount_wei = orchestrator.w3.to_wei(request.fund_amount_eth, "ether")
+        fund_amount_wei = corelib_client.w3.to_wei(request.fund_amount_eth, "ether")
     else:
-        fund_amount_wei = orchestrator.w3.to_wei(settings.default_fund_amount_eth, "ether")
-    
-    # Setup authority (creates wallet, registers, authorizes NAANs)
-    authority = orchestrator.setup_authority(
+        fund_amount_wei = corelib_client.w3.to_wei(settings.default_fund_amount_eth, "ether")
+
+    authority = corelib_client.setup_authority(
         uuid=request.uuid,
         naans=request.naans,
         fund_amount_wei=fund_amount_wei,
     )
-    
-    # Get wallet balance
-    balance = orchestrator.get_wallet_balance(request.uuid)
-    
+    balance = corelib_client.get_wallet_balance(request.uuid)
+
     logger.info(f"Authority {request.uuid} registered successfully")
-    
+
     return AuthorityResponse(
         uuid=authority.uuid,
         wallet_address=authority.wallet_address,
@@ -99,16 +96,14 @@ async def register_authority(
 async def get_authority(
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> AuthorityResponse:
-    """
-    Get authority information by UUID.
-    """
+    """Get authority information by UUID."""
     logger.info(f"Getting authority: {uuid}")
-    
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    balance = orchestrator.get_wallet_balance(uuid)
-    
+
+    authority = corelib_client.get_authority_by_uuid(uuid)
+    balance = corelib_client.get_wallet_balance(uuid)
+
     return AuthorityResponse(
         uuid=authority.uuid,
         wallet_address=authority.wallet_address,
@@ -128,33 +123,24 @@ async def authorize_naan(
     request: AuthorizeNAANRequest,
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> OperationResponse:
-    """
-    Authorize a NAAN for an authority.
-    """
+    """Authorize a NAAN for an authority."""
     logger.info(f"Authorizing NAAN {request.naan} for authority {uuid}")
-    
-    # Get authority credentials
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    wallet_address, private_key = orchestrator._get_authority_credentials(uuid)
-    
-    # Authorize NAAN
-    receipt = orchestrator.authority_manager.authorize_naan(
-        wallet_address, private_key, request.naan
-    )
-    
-    if receipt.get("already_authorized"):
+
+    authority = corelib_client.get_authority_by_uuid(uuid)
+    if request.naan in authority.naans:
         return OperationResponse(
             status="success",
             message=f"NAAN {request.naan} was already authorized for {uuid}",
             transaction_hash=None,
         )
-    
+
+    receipt = corelib_client.authorize_naan(uuid, request.naan)
     return OperationResponse(
         status="success",
         message=f"NAAN {request.naan} authorized for {uuid}",
-        transaction_hash=receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None,
+        transaction_hash=_tx_hash_or_none(receipt.tx_hash),
     )
 
 
@@ -168,31 +154,24 @@ async def revoke_naan(
     request: RevokeNAANRequest,
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> OperationResponse:
-    """
-    Revoke a NAAN from an authority.
-    
-    Note: This requires the revoke_naan function to be implemented in the orchestrator.
-    """
+    """Revoke a NAAN from an authority."""
     logger.info(f"Revoking NAAN {request.naan} from authority {uuid}")
-    
-    # Check if authority exists
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    
-    # Check if NAAN is currently authorized
+
+    authority = corelib_client.get_authority_by_uuid(uuid)
     if request.naan not in authority.naans:
         return OperationResponse(
             status="success",
             message=f"NAAN {request.naan} was not authorized for {uuid}",
             transaction_hash=None,
         )
-    
-    # TODO: Implement revoke_naan in orchestrator
-    # For now, return a not implemented response
-    raise HTTPException(
-        status_code=501,
-        detail="NAAN revocation not yet implemented in orchestrator"
+
+    receipt = corelib_client.revoke_naan(uuid, request.naan)
+    return OperationResponse(
+        status="success",
+        message=f"NAAN {request.naan} revoked for {uuid}",
+        transaction_hash=_tx_hash_or_none(receipt.tx_hash),
     )
 
 
@@ -205,36 +184,26 @@ async def revoke_naan(
 async def deactivate_authority(
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> OperationResponse:
-    """
-    Deactivate an authority.
-    
-    Note: This requires the deactivate_authority function to be implemented in the orchestrator.
-    """
+    """Deactivate an authority."""
     logger.info(f"Deactivating authority: {uuid}")
-    
-    # Check if authority exists
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    
+
+    authority = corelib_client.get_authority_by_uuid(uuid)
     if not authority.active:
         return OperationResponse(
             status="success",
             message=f"Authority {uuid} is already inactive",
             transaction_hash=None,
         )
-    
-    # TODO: Implement deactivate_authority in orchestrator
-    # For now, return a not implemented response
-    raise HTTPException(
-        status_code=501,
-        detail="Authority deactivation not yet implemented in orchestrator"
+
+    receipt = corelib_client.deactivate_authority(uuid)
+    return OperationResponse(
+        status="success",
+        message=f"Authority {uuid} deactivated",
+        transaction_hash=_tx_hash_or_none(receipt.tx_hash),
     )
 
-
-# =============================================================================
-# Wallet Operations
-# =============================================================================
 
 @router.get(
     "/authority/{uuid}/balance",
@@ -245,16 +214,14 @@ async def deactivate_authority(
 async def get_balance(
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> BalanceResponse:
-    """
-    Get wallet balance for an authority.
-    """
+    """Get wallet balance for an authority."""
     logger.info(f"Getting balance for authority: {uuid}")
-    
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    balance = orchestrator.get_wallet_balance(uuid)
-    
+
+    authority = corelib_client.get_authority_by_uuid(uuid)
+    balance = corelib_client.get_wallet_balance(uuid)
+
     return BalanceResponse(
         uuid=uuid,
         wallet_address=authority.wallet_address,
@@ -272,32 +239,21 @@ async def fund_wallet(
     request: FundWalletRequest,
     uuid: str = Path(..., description="Authority UUID"),
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> OperationResponse:
-    """
-    Fund an authority's wallet.
-    """
+    """Fund an authority wallet."""
     logger.info(f"Funding authority {uuid} with {request.amount_eth} ETH")
-    
-    # Get authority to verify it exists and get wallet address
-    authority = orchestrator.get_authority_by_uuid(uuid)
-    
-    # Convert ETH to wei
-    amount_wei = orchestrator.w3.to_wei(request.amount_eth, "ether")
-    
-    # Fund wallet
-    receipt = orchestrator._fund_wallet(authority.wallet_address, amount_wei)
-    
+
+    corelib_client.get_authority_by_uuid(uuid)
+    amount_wei = corelib_client.w3.to_wei(request.amount_eth, "ether")
+    receipt = corelib_client.fund_authority_wallet(uuid, amount_wei)
+
     return OperationResponse(
         status="success",
         message=f"Funded {uuid} with {request.amount_eth} ETH",
-        transaction_hash=receipt.get("transactionHash", b"").hex() if receipt.get("transactionHash") else None,
+        transaction_hash=_tx_hash_or_none(receipt.tx_hash),
     )
 
-
-# =============================================================================
-# System Status
-# =============================================================================
 
 @router.get(
     "/status",
@@ -307,17 +263,15 @@ async def fund_wallet(
 )
 async def get_status(
     cert_info: dict = Depends(require_mtls),
-    orchestrator: DARKOrchestrator = Depends(get_orchestrator),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> AdminStatusResponse:
-    """
-    Get admin status and system information.
-    """
+    """Get admin status and system information."""
     logger.info("Getting admin status")
-    
+
     return AdminStatusResponse(
-        admin_address=orchestrator.admin_account.address,
-        admin_balance_eth=orchestrator.get_admin_balance(),
-        blockchain_connected=orchestrator.is_connected(),
-        current_block=orchestrator.get_block_number(),
-        chain_id=orchestrator.config.chain_id,
+        admin_address=corelib_client.admin_account.address,
+        admin_balance_eth=corelib_client.get_admin_balance(),
+        blockchain_connected=corelib_client.is_connected(),
+        current_block=corelib_client.get_block_number(),
+        chain_id=corelib_client.config.chain_id,
     )
