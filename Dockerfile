@@ -16,7 +16,7 @@ COPY services/dark-core-admin-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy dark-core-lib from the sibling directory in the build context.
-COPY core/dark-core-lib /opt/dark-core-lib
+COPY libraries/dark-core-lib /opt/dark-core-lib
 RUN pip install --no-cache-dir /opt/dark-core-lib
 
 # Copy application

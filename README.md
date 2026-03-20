@@ -153,7 +153,7 @@ This API performs privileged admin operations and should be treated as highly se
 cd /Users/lmatas/source/dark-developer
 source venv/bin/activate
 pip install -r components/services/dark-core-admin-api/requirements.txt
-pip install -e components/core/dark-core-lib
+pip install -e components/libraries/dark-core-lib
 pip install -e components/services/dark-core-admin-api
 ```
 
@@ -198,7 +198,7 @@ docker compose up -d --build
 - the compose stack joins the external `dark-net` network
 - inside Docker, `DARK_RPC_URL` is rewritten to `http://rpc01:8545`
 - the container reads `.env.integration`
-- the image installs `dark-core-lib` from the sibling `components/core/dark-core-lib`
+- the image installs `dark-core-lib` from the sibling `components/libraries/dark-core-lib`
 
 ## Configuration
 
