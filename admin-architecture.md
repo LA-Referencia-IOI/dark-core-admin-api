@@ -116,6 +116,8 @@ sequenceDiagram
 
 The admin API does not orchestrate these steps manually itself. It delegates the business operation to `dark-core-lib`, which owns the actual blockchain interactions.
 
+An authority may also be registered with an empty `naans` list and receive NAANs later through `authorize-naan`. That pattern is useful for staged onboarding and for notebooks that demonstrate authority creation before ARK reservation.
+
 ### Query Authority and Balance
 
 ```mermaid

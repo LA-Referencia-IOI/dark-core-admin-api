@@ -44,6 +44,8 @@ Run the notebook when you want to validate:
 5. NAAN authorization changes
 6. funding and balance operations
 
+If you want to continue from authority creation into reserve, publish, and resolve, use the monorepo notebook at `/Users/lmatas/source/dark-developer/notebooks/dark_e2e_authority_to_resolver.ipynb`.
+
 For service internals and architecture, see:
 
 - [../README.md](../README.md)
