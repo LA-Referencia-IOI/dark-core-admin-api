@@ -4,13 +4,12 @@ version = "0.1.0"
 description = "dARK Core Admin API - REST service for Authority management"
 readme = "README.md"
 license = {text = "AGPL-3.0-or-later"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{name = "dARK Team"}]
 keywords = ["dark", "ark", "persistent-identifiers", "blockchain", "api", "admin"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
