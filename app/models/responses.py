@@ -91,3 +91,31 @@ class ErrorResponse(BaseModel):
         None,
         description="Additional error details"
     )
+
+
+# =============================================================================
+# ARK Responses
+# =============================================================================
+
+class ArkCountResponse(BaseModel):
+    """Total ARK count response."""
+    
+    count: int = Field(..., description="Total number of ARKs on blockchain")
+
+
+class RecentArkItem(BaseModel):
+    """Individual ARK information for recent list."""
+    
+    pid: str = Field(..., description="ARK PID (e.g., ark:/12345/name)")
+    naan: str = Field(..., description="NAAN of the ARK")
+    name: str = Field(..., description="Name of the ARK")
+    owner: str = Field(..., description="Wallet address of the owner")
+    url: str = Field(..., description="Target URL")
+    cid: str = Field(..., description="Level-1 metadata CID")
+
+
+class RecentArksResponse(BaseModel):
+    """Recent ARKs list response."""
+    
+    limit: int = Field(..., description="Number of items requested")
+    arks: list[RecentArkItem] = Field(..., description="List of recent ARKs")
