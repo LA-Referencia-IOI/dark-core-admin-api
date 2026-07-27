@@ -228,7 +228,7 @@ Important assumptions:
 
 - blockchain is already running on `dark-net`
 - `.env.integration` contains valid contract addresses and admin key
-- the container rewrites `DARK_RPC_URL` to `http://rpc01:8545`
+- `DARK_RPC_URL` in `.env.integration` is `http://rpc01:8545` for a co-located blockchain, or the real remote RPC address for a decoupled install — dark-deployer decides which at generation time, the compose file no longer hardcodes it
 
 ## 10. Tradeoffs and Current Limits
 
