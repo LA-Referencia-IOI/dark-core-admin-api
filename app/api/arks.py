@@ -5,6 +5,9 @@ Provides operations for getting global statistics and history of ARKs.
 """
 
 import logging
+import time
+from threading import Lock
+from typing import Callable
 
 from fastapi import APIRouter, Depends, Query
 
@@ -22,6 +25,25 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Scanning ARKCreated logs is expensive on a busy chain, and these values only
+# need to be roughly fresh for dashboard widgets. Serve them from a short-lived
+# process-local cache so bursts of dashboard loads cost one RPC scan, not many.
+_CACHE_TTL_SECONDS = 30.0
+_cache: dict[str, tuple[float, object]] = {}
+_cache_lock = Lock()
+
+
+def _cached(key: str, producer: Callable[[], object]) -> object:
+    now = time.monotonic()
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None and now - hit[0] < _CACHE_TTL_SECONDS:
+            return hit[1]
+    value = producer()
+    with _cache_lock:
+        _cache[key] = (time.monotonic(), value)
+    return value
+
 
 @router.get(
     "/count",
@@ -29,14 +51,14 @@ router = APIRouter()
     summary="Get total ARK count",
     description="Get the total number of ARKs registered on the blockchain.",
 )
-async def get_ark_count(
+def get_ark_count(
     cert_info: dict = Depends(require_mtls),
     corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> ArkCountResponse:
     """Get total number of ARKs."""
     logger.info("Getting total ARK count")
-    
-    count = corelib_client.get_ark_count()
+
+    count = _cached("count", corelib_client.get_ark_count)
     return ArkCountResponse(count=count)
 
 
@@ -46,16 +68,19 @@ async def get_ark_count(
     summary="Get recent ARKs",
     description="Get the most recent ARKs registered on the blockchain, including their metadata CIDs.",
 )
-async def get_recent_arks(
+def get_recent_arks(
     limit: int = Query(10, ge=1, le=100, description="Number of recent ARKs to retrieve"),
     cert_info: dict = Depends(require_mtls),
     corelib_client: DARKCoreClient = Depends(get_corelib_client),
 ) -> RecentArksResponse:
     """Get the most recent ARKs."""
     logger.info(f"Getting last {limit} recent ARKs")
-    
-    recent = corelib_client.get_recent_arks(limit=limit)
-    
+
+    recent = _cached(
+        f"recent:{limit}",
+        lambda: corelib_client.get_recent_arks(limit=limit),
+    )
+
     # Map raw dictionary results to Pydantic models
     items = []
     for r in recent:

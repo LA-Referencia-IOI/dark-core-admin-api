@@ -2,7 +2,19 @@
 Tests for Admin API endpoints.
 """
 
+import pytest
+
 from dark_core_lib.exceptions import AuthorityAlreadyExistsError, AuthorityNotFoundError
+
+
+@pytest.fixture(autouse=True)
+def _clear_arks_cache():
+    """Keep the process-local ARK cache from leaking between tests."""
+    from app.api import arks
+
+    arks._cache.clear()
+    yield
+    arks._cache.clear()
 
 
 class TestHealthEndpoint:
@@ -254,3 +266,43 @@ class TestAdminStatus:
         assert "blockchain_connected" in data
         assert "current_block" in data
         assert "chain_id" in data
+
+
+class TestGlobalArks:
+    """Tests for GET /api/v1/arks/count and /api/v1/arks/recent."""
+
+    def test_ark_count(self, client, mock_corelib_client):
+        mock_corelib_client.get_ark_count.return_value = 87255
+
+        response = client.get("/api/v1/arks/count")
+
+        assert response.status_code == 200
+        assert response.json() == {"count": 87255}
+
+    def test_recent_arks(self, client, mock_corelib_client):
+        mock_corelib_client.get_recent_arks.return_value = [
+            {
+                "pid": "ark:/12345/abc",
+                "naan": "12345",
+                "name": "abc",
+                "owner": "0x" + "a" * 40,
+                "url": "https://example.org/abc",
+                "cid": "bafkreiabc",
+            }
+        ]
+
+        response = client.get("/api/v1/arks/recent?limit=5")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["limit"] == 5
+        assert [a["pid"] for a in data["arks"]] == ["ark:/12345/abc"]
+        mock_corelib_client.get_recent_arks.assert_called_once_with(limit=5)
+
+    def test_recent_arks_are_cached_between_requests(self, client, mock_corelib_client):
+        mock_corelib_client.get_recent_arks.return_value = []
+
+        client.get("/api/v1/arks/recent?limit=5")
+        client.get("/api/v1/arks/recent?limit=5")
+
+        assert mock_corelib_client.get_recent_arks.call_count == 1
