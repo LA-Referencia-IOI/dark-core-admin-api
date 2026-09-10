@@ -12,15 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Build context is expected to be components so dark-core-lib is available.
 # Example:
 # docker build -f services/dark-core-admin-api/Dockerfile -t dark-core-admin-api .
-COPY services/dark-core-admin-api/requirements.txt .
+COPY dark-core-admin-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy dark-core-lib from the sibling directory in the build context.
-COPY libraries/dark-core-lib /opt/dark-core-lib
+COPY dark-core-lib /opt/dark-core-lib
 RUN pip install --no-cache-dir /opt/dark-core-lib
 
 # Copy application
-COPY services/dark-core-admin-api/app/ ./app/
+COPY dark-core-admin-api/app/ ./app/
 
 # Create non-root user
 RUN useradd -m -u 1000 dark && chown -R dark:dark /app
