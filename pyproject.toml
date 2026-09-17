@@ -4,15 +4,13 @@ version = "0.1.0"
 description = "dARK Core Admin API - REST service for Authority management"
 readme = "README.md"
 license = {text = "AGPL-3.0-or-later"}
-requires-python = ">=3.10"
+requires-python = ">=3.14,<3.15"
 authors = [{name = "dARK Team"}]
 keywords = ["dark", "ark", "persistent-identifiers", "blockchain", "api", "admin"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "fastapi>=0.109.0",
@@ -20,8 +18,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
-    "web3>=6.0.0",
-    "eth-account>=0.10.0",
+    "web3>=7.16,<8",
+    "eth-account>=0.14,<0.15",
     "cryptography>=41.0.0",
 ]
 
