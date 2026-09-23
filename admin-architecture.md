@@ -22,6 +22,7 @@ This keeps the admin surface small and makes the service easier to reason about 
   - [`app/main.py`](./app/main.py)
   - [`app/api/router.py`](./app/api/router.py)
   - [`app/api/admin.py`](./app/api/admin.py)
+  - [`app/api/arks.py`](./app/api/arks.py) — global ARK read endpoints (`/count`, `/recent`) with a 30-second process-local cache
 - Runtime dependencies
   - [`app/config.py`](./app/config.py)
   - [`app/dependencies.py`](./app/dependencies.py)
@@ -71,7 +72,7 @@ sequenceDiagram
 
 ## 5. Security Gate
 
-All admin endpoints depend on `require_mtls` from [`app/middleware/auth.py`](./app/middleware/auth.py).
+All admin and ARK read endpoints depend on `require_mtls` from [`app/middleware/auth.py`](./app/middleware/auth.py).
 
 ### Current Model
 
@@ -122,8 +123,8 @@ An authority may also be registered with an empty `naans` list and receive NAANs
 
 ```mermaid
 flowchart LR
-    A["GET /authority/{uuid}"] --> Core["dark-core-lib"]
-    B["GET /authority/{uuid}/balance"] --> Core
+    A["GET /api/v1/admin/authority/{uuid}"] --> Core["dark-core-lib"]
+    B["GET /api/v1/admin/authority/{uuid}/balance"] --> Core
     Core --> Chain["Read blockchain state"]
 ```
 
@@ -157,7 +158,7 @@ The endpoint logic is intentionally small:
 ```mermaid
 sequenceDiagram
     participant Client as "Client"
-    participant API as "POST /fund"
+    participant API as "POST /api/v1/admin/authority/{uuid}/fund"
     participant Core as "dark-core-lib"
     participant Chain as "Blockchain"
 
@@ -177,8 +178,23 @@ flowchart LR
     Core --> Chain["RPC reads"]
 ```
 
-- `/health` is a lightweight service-level check
+- `/health/live` is a pure process liveness probe (`{"status": "alive"}`); it does not call RPC or storage
+- `/health` is a lightweight service-level check that reports blockchain connectivity, current block, and admin balance
 - `/api/v1/admin/status` is the richer operator-oriented status endpoint
+
+### Global ARK Reads
+
+The read endpoints in [`app/api/arks.py`](./app/api/arks.py) serve dashboard widgets: global count and the most recent ARKs.
+
+```mermaid
+flowchart LR
+    A["GET /api/v1/arks/count"] --> Cache["process-local cache, 30 s TTL"]
+    B["GET /api/v1/arks/recent?limit=10"] --> Cache
+    Cache --> Core["dark-core-lib"]
+    Core --> Chain["ARKCreated log scan"]
+```
+
+Both are behind `require_mtls`, are cached per key for 30 seconds so bursts of dashboard loads cost one log scan, and delegate to `DARKCoreClient.get_ark_count()` / `get_recent_arks(limit)`. The `limit` query parameter defaults to `10` and is bounded to `1`–`100`.
 
 ## 7. Exception Mapping
 
@@ -213,22 +229,22 @@ There is no database config because the admin API does not manage a local busine
 
 ## 9. Deployment Topology
 
-### Monorepo Docker Deployment
+There is no standalone docker-compose file in this component. The service is deployed by the dark-deployer deployment v3 pipeline: an operator inventory (see `examples/operator-inventory/` in the dark-deployer repo) is resolved, planned, and rendered into per-machine Docker Compose bundles, then applied with `./deploy.sh install` (locally) or `prepare`/`push`/`apply` (remote hosts).
 
 ```mermaid
 flowchart LR
-    ENV["components/blockchain/dark-env"] --> NET["dark-net"]
-    ADMIN["components/services/dark-core-admin-api"] --> NET
-    ADMIN --> API["admin-api container"]
-    API --> Core["dark-core-lib in image"]
-    Core --> Chain["rpc01:8545 + contracts"]
+    INV["operator inventory (examples/operator-inventory/)"] --> PLAN["resolve + plan"]
+    PLAN --> BUNDLE["per-machine Docker Compose bundle"]
+    BUNDLE --> ADMIN["dark-core-admin-api container"]
+    ADMIN --> Core["dark-core-lib in image"]
+    Core --> Chain["blockchain RPC + contracts"]
 ```
 
-Important assumptions:
+Operational notes:
 
-- blockchain is already running on `dark-net`
-- `.env.integration` contains valid contract addresses and admin key
-- `DARK_RPC_URL` in `.env.integration` is `http://rpc01:8545` for a co-located blockchain, or the real remote RPC address for a decoupled install — dark-deployer decides which at generation time, the compose file no longer hardcodes it
+- the rendered bundle is generated output; edit the inventory and re-render instead of hand-editing compose files
+- the runtime image version and the component checkout branch are pinned in `deployment_v3/catalog_data/dark-platform-baseline-v1.0.json`
+- the deployer renders the admin-api runtime environment (`ADMIN_API_HOST`, `ADMIN_API_PORT`, `DARK_RPC_URL`, `DARK_CHAIN_ID`) from the inventory connection graph in `deployment_v3/render.py`
 
 ## 10. Tradeoffs and Current Limits
 
@@ -248,6 +264,7 @@ If you are onboarding to this codebase, this order works well:
 1. [README.md](./README.md)
 2. [`app/main.py`](./app/main.py)
 3. [`app/api/admin.py`](./app/api/admin.py)
-4. [`app/dependencies.py`](./app/dependencies.py)
-5. [`app/middleware/auth.py`](./app/middleware/auth.py)
-6. [`app/exceptions/handlers.py`](./app/exceptions/handlers.py)
+4. [`app/api/arks.py`](./app/api/arks.py)
+5. [`app/dependencies.py`](./app/dependencies.py)
+6. [`app/middleware/auth.py`](./app/middleware/auth.py)
+7. [`app/exceptions/handlers.py`](./app/exceptions/handlers.py)
