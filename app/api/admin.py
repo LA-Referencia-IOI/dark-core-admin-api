@@ -5,30 +5,38 @@ Provides administrative operations for managing authorities in the dARK network.
 """
 
 import logging
+import base64
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query, HTTPException
 
 from dark_core_lib import DARKCoreClient
+from dark_core_lib.exceptions import AuthorityNotFoundError, ARKNotFoundError
+from dark_core_lib.request_signing import public_key_bytes, key_id
 
 from app.config import get_settings
 from app.dependencies import get_corelib_client
 from app.middleware.auth import require_mtls
 from app.models.requests import (
+    TransferARKOwnerRequest,
     AuthorizeNAANRequest,
     FundWalletRequest,
     RegisterAuthorityRequest,
+    SetClientKeyRequest,
     RevokeNAANRequest,
 )
 from app.models.responses import (
     AdminStatusResponse,
     AuthorityResponse,
+    AuthorityClientKeyResponse,
     BalanceResponse,
     OperationResponse,
 )
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+from app.services import ownership
+
+router = APIRouter(dependencies=[Depends(ownership.serialize_admin_writes)])
 
 
 def _tx_hash_or_none(tx_hash: str) -> str | None:
@@ -73,6 +81,7 @@ async def register_authority(
         uuid=request.uuid,
         naans=request.naans,
         fund_amount_wei=fund_amount_wei,
+        **({"client_public_key": public_key_bytes(request.client_public_key)} if request.client_public_key is not None else {}),
     )
     balance = corelib_client.get_wallet_balance(request.uuid)
 
@@ -197,11 +206,11 @@ async def deactivate_authority(
             transaction_hash=None,
         )
 
-    receipt = corelib_client.deactivate_authority(uuid)
+    receipt = ownership.deactivate(corelib_client, uuid)
     return OperationResponse(
         status="success",
         message=f"Authority {uuid} deactivated",
-        transaction_hash=_tx_hash_or_none(receipt.tx_hash),
+        transaction_hash=_tx_hash_or_none(receipt.tx_hash) if receipt else None,
     )
 
 
@@ -275,3 +284,72 @@ async def get_status(
         current_block=corelib_client.get_block_number(),
         chain_id=corelib_client.config.chain_id,
     )
+
+
+@router.put("/authority/{uuid}/client-key", response_model=OperationResponse)
+async def set_authority_client_key(
+    request: SetClientKeyRequest, uuid: str,
+    cert_info: dict = Depends(require_mtls),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
+):
+    receipt = corelib_client.set_authority_client_key(uuid, public_key_bytes(request.client_public_key))
+    return OperationResponse(status="success", message=f"Client key replaced for {uuid}", transaction_hash=receipt.tx_hash)
+
+
+@router.get("/authority/{uuid}/client-key", response_model=AuthorityClientKeyResponse)
+async def get_authority_client_key(
+    uuid: str, cert_info: dict = Depends(require_mtls),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client),
+):
+    public_key, active = corelib_client.get_authority_auth(uuid)
+    has_key = len(public_key) == 32 and any(public_key)
+    return AuthorityClientKeyResponse(
+        uuid=uuid, active=active,
+        client_public_key=base64.b64encode(public_key).decode("ascii") if has_key else None,
+        key_id=key_id(public_key) if has_key else None,
+    )
+
+
+@router.get("/authority/{uuid}/ownership")
+def authority_ownership(uuid: str,
+    cert_info: dict = Depends(require_mtls),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client)):
+    try:
+        return ownership.summary(corelib_client, uuid)
+    except HTTPException:
+        raise
+    except AuthorityNotFoundError:
+        raise HTTPException(404, "AUTHORITY_NOT_FOUND")
+    except Exception:
+        raise HTTPException(503, "OWNERSHIP_INVENTORY_UNAVAILABLE")
+
+
+@router.get("/authority/{uuid}/pids")
+def authority_pids(uuid: str, page: int = Query(1, ge=1),
+    cert_info: dict = Depends(require_mtls),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client)):
+    try:
+        return ownership.summary(corelib_client, uuid, page)
+    except HTTPException:
+        raise
+    except AuthorityNotFoundError:
+        raise HTTPException(404, "AUTHORITY_NOT_FOUND")
+    except Exception:
+        raise HTTPException(503, "OWNERSHIP_INVENTORY_UNAVAILABLE")
+
+
+@router.post("/arks/transfer-owner")
+def transfer_ark_owner(request: TransferARKOwnerRequest,
+    cert_info: dict = Depends(require_mtls),
+    corelib_client: DARKCoreClient = Depends(get_corelib_client)):
+    try:
+        return ownership.transfer(corelib_client, request)
+    except HTTPException:
+        raise
+    except AuthorityNotFoundError:
+        raise HTTPException(404, "AUTHORITY_NOT_FOUND")
+    except ARKNotFoundError:
+        raise HTTPException(404, "ARK_NOT_FOUND")
+    except Exception:
+        # Unknown outcomes are reconciled against the chain on an identical retry.
+        raise HTTPException(503, "TRANSFER_NOT_CONFIRMED_CHECK_CHAIN_AND_RETRY")

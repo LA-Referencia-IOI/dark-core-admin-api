@@ -270,3 +270,27 @@ Check:
 
 - [admin-architecture.md](./admin-architecture.md)
 - [notebooks/README.md](./notebooks/README.md)
+
+
+## Minter client signing keys
+
+Authority creation accepts optional `client_public_key` (base64 of a raw 32-byte
+Ed25519 public key). When supplied, wallet registration and key assignment are
+atomic in `register_authority_with_client_key`. Without it, existing unsigned
+installations can still create authorities. Signed Minter mode rejects missing
+keys. Replace a key through authenticated
+`PUT /api/v1/admin/authority/{uuid}/client-key` with the same field. This preserves
+UUID, wallet, NAANs and PID ownership. The private key never reaches Admin.
+These operations require the updated Authority contract and ABI.
+
+GET `/api/v1/admin/authority/{uuid}/client-key` returns `uuid`,
+`client_public_key` (raw base64 or null), `key_id` (SHA-256 hex or null) and
+`active`, read from blockchain. Registry failures are returned as errors,
+not as null keys. Public-key registration and replacement also accept OpenSSH
+`ssh-ed25519` public keys with optional comments and normalize them to raw bytes.
+
+## Ownership transfer and retirement
+
+Each authority operates in one logical Minter; different authorities can use different nodes. Admin transfers only on blockchain, without reading or changing Minter PostgreSQL. Local queues and pending replication do not restrict transfer. Admin inventories current chain owners and blocks retirement while on-chain PIDs remain; stop the authority’s activity and settle in-flight transactions before retirement. The previous request-ID resume API, database retirement gates and transfer coordination dependency were removed.
+
+Minter trusts local identity for normal queued publication and verifies owner/active status/NAAN permissions after a failure. Ownership loss marks the original job obsolete without signing it as the successor. Local-only tombstone/retry verify ownership first; reservations verify active status. A successor request can import the chain PID, archiving superseded local payload under its original authority. Migration `0004_remove_admin_coordination` preserves historical audit rows and creates local `superseded_ark_jobs`. `MINTER_ALLOWED_AUTHORITY_IDS` supplies disjoint assignments for independent Minters (empty means single-Minter unrestricted deployment). See deployer `docs/pid-ownership-transfer-design.md` for API, recovery and operational limitations.

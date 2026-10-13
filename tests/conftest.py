@@ -44,6 +44,7 @@ def mock_corelib_client(mock_authority_info):
     """Create a mock DARKCoreClient."""
     mock = MagicMock()
 
+    mock.get_owned_ark_count.return_value = 0
     mock.is_connected.return_value = True
     mock.get_block_number.return_value = 12345
     mock.get_admin_balance.return_value = 10.5

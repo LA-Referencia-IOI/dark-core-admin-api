@@ -119,3 +119,10 @@ class RecentArksResponse(BaseModel):
     
     limit: int = Field(..., description="Number of items requested")
     arks: list[RecentArkItem] = Field(..., description="List of recent ARKs")
+
+
+class AuthorityClientKeyResponse(BaseModel):
+    uuid: str
+    client_public_key: Optional[str]
+    key_id: Optional[str]
+    active: bool
