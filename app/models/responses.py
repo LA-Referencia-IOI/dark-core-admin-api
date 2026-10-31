@@ -106,7 +106,7 @@ class ArkCountResponse(BaseModel):
 class RecentArkItem(BaseModel):
     """Individual ARK information for recent list."""
     
-    pid: str = Field(..., description="ARK PID (e.g., ark:/12345/name)")
+    pid: str = Field(..., description="ARK PID (e.g., ark:12345/name)")
     naan: str = Field(..., description="NAAN of the ARK")
     name: str = Field(..., description="Name of the ARK")
     owner: str = Field(..., description="Wallet address of the owner")
