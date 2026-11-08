@@ -38,13 +38,12 @@ Run the server::
 
     uvicorn app.main:app --port 8000
 
-Or run with Docker Compose::
-
-    docker compose up -d --build
+For deployment, use the dark-deployer operator inventory and guided operations.
+This repository does not provide a standalone Compose file.
 
 Access documentation at http://localhost:8000/docs
 
 Additional developer-facing docs:
 
 - See ``README.md`` for deployment and configuration.
-- See ``admin-architecture.md`` for implementation details.
+- See ``architecture.md`` for implementation details.

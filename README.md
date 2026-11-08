@@ -19,16 +19,16 @@ This service is intended for controlled administrative environments, not for pub
 
 Use the docs in this order:
 
-- [README.md](./README.md)
+- [README.md](README.md)
   - operational overview, endpoints, deployment, config
-- [admin-architecture.md](./admin-architecture.md)
+- [admin-architecture.md](docs/architecture.md)
   - technical implementation details, module map, request flows
-- [notebooks/README.md](./notebooks/README.md)
+- [notebooks/README.md](notebooks/README.md)
   - notebook usage and environment variables
 
 ## Runtime Architecture
 
-If you want the implementation-oriented view behind this diagram, continue with [admin-architecture.md](./admin-architecture.md).
+If you want the implementation-oriented view behind this diagram, continue with [admin-architecture.md](docs/architecture.md).
 
 ```mermaid
 flowchart LR
@@ -42,7 +42,7 @@ flowchart LR
 - Admin API
   - exposes administrative HTTP endpoints
   - validates request payloads
-  - enforces the current mTLS gate
+  - applies the mTLS gate when enabled
   - translates `dark-core-lib` exceptions to HTTP responses
 - `dark-core-lib`
   - owns the blockchain client
@@ -76,7 +76,7 @@ What this does conceptually:
 - creates the authority wallet material
 - registers the authority on-chain
 - authorizes the requested NAANs
-- optionally funds the wallet using the admin account
+- funds the wallet using the admin account (with a configurable amount)
 
 ### 2. Manage Authority Permissions
 
@@ -92,7 +92,7 @@ sequenceDiagram
     Client->>API: authorize-naan / revoke-naan / deactivate
     API->>Core: load current authority
     API->>Core: execute requested operation
-    Core->>Chain: signed admin transaction
+    Core->>Chain: signed transaction from authority wallet or admin
     API-->>Client: OperationResponse
 ```
 
@@ -144,8 +144,15 @@ Implemented in `app/api/arks.py`, these are dashboard-facing reads over `dark-co
 ### Current Behavior
 
 - every admin and ARK read route is protected with `require_mtls`
-- when `MTLS_ENABLED=false`, the middleware allows requests through for local development
+- when `MTLS_ENABLED=false` (the default), the middleware allows requests through
 - when `MTLS_ENABLED=true`, the request must present a valid client certificate path as understood by the deployment
+
+The standard container starts Uvicorn without TLS arguments, and the deployer
+does not set `MTLS_ENABLED` in the ordinary Admin environment. Enabling the gate
+therefore requires a separately configured TLS termination boundary. The gate can
+accept `X-SSL-Client-*` headers; only a trusted proxy that strips client-supplied
+values and supplies verified values should be allowed to reach it. The Dashboard
+client does not configure a client certificate on its Admin API calls.
 
 ### Important Operational Note
 
@@ -161,7 +168,7 @@ This API performs privileged admin operations and should be treated as highly se
 ### Inside `dark-deployer`
 
 ```bash
-cd /Users/lmatas/source/dark-deployer
+cd /path/to/dark-deployer
 source venv/bin/activate
 pip install -r components/dark-core-admin-api/requirements.txt
 pip install -e components/dark-core-lib
@@ -185,7 +192,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Deployment
 
-dark-core-admin-api is deployed by the [dark-deployer](../../README.md) using the deployment v3 pipeline: an operator inventory (see [examples/operator-inventory/](../../examples/operator-inventory/)) is resolved, planned, and rendered into per-machine Docker Compose bundles, then applied with `./deploy.sh install` (locally) or `prepare`/`push`/`apply` (remote hosts). The runtime image version and the component checkout branch are pinned in `deployment_v3/catalog_data/dark-platform-baseline-v1.0.json`. There is no standalone docker-compose file in this component.
+dark-core-admin-api is deployed by the [dark-deployer](https://github.com/LA-Referencia-IOI/dark-deployer) from an operator inventory (format `dark-operator-inventory` v3; see the [inventory reference](https://github.com/LA-Referencia-IOI/dark-deployer/blob/main/examples/operator-inventory/README.md)). The deployer resolves the inventory, renders one Docker Compose project per machine and applies it through guided operations (`./deploy.sh operation plan`, `apply`, `resume`; see the [deployer documentation](https://github.com/LA-Referencia-IOI/dark-deployer/blob/main/docs/deployer.md)). The image is built from this repository at the branch declared in the inventory (`overrides.components`; default `main`). Runtime environment variables are generated from the inventory, not edited by hand. There is no standalone docker-compose file in this component.
 
 ## Configuration
 
@@ -234,9 +241,9 @@ Once the service is running:
 
 The service includes one HTTP-level integration notebook:
 
-- [notebooks/admin_api_test.ipynb](./notebooks/admin_api_test.ipynb)
+- [notebooks/admin_api_test.ipynb](notebooks/admin_api_test.ipynb)
 
-See [notebooks/README.md](./notebooks/README.md) for usage notes.
+See [notebooks/README.md](notebooks/README.md) for usage notes.
 
 ## Troubleshooting
 
@@ -268,8 +275,8 @@ Check:
 
 ## Related Docs
 
-- [admin-architecture.md](./admin-architecture.md)
-- [notebooks/README.md](./notebooks/README.md)
+- [admin-architecture.md](docs/architecture.md)
+- [notebooks/README.md](notebooks/README.md)
 
 
 ## Minter client signing keys

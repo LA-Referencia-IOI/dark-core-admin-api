@@ -28,7 +28,7 @@ From that base URL it derives:
 
 ## Execution Notes
 
-- if the service was installed from the root installer, it may already have a generated `.env.integration`
+- configure the notebook environment for the deployment being inspected; the current deployer generates service runtime environments separately
 - the notebook assumes the service itself has the correct blockchain configuration already loaded
 - in local development, the current middleware allows requests when `MTLS_ENABLED=false`
 - in production-like setups with `MTLS_ENABLED=true`, this notebook would need to run through the proper mTLS path
@@ -44,9 +44,9 @@ Run the notebook when you want to validate:
 5. NAAN authorization changes
 6. funding and balance operations
 
-If you want to continue from authority creation into reserve, publish, and resolve, use the monorepo notebook at `/Users/lmatas/source/dark-developer/notebooks/dark_e2e_authority_to_resolver.ipynb`.
+If you want to continue from authority creation into reserve, publish, and resolve, use the [end-to-end notebook in the deployer repository](https://github.com/LA-Referencia-IOI/dark-deployer/blob/main/notebooks/dark_e2e_authority_to_resolver.ipynb).
 
 For service internals and architecture, see:
 
 - [../README.md](../README.md)
-- [../admin-architecture.md](../admin-architecture.md)
+- [architecture](../docs/architecture.md)
